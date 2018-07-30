@@ -1,14 +1,20 @@
-import os, sys, time, re, io
+import os, time, re, io
 import threading
 import json, xml.dom.minidom
-import copy, pickle, random
+import random
 import traceback, logging
+try:
+    from httplib import BadStatusLine
+except ImportError:
+    from http.client import BadStatusLine
 
 import requests
+from pyqrcode import QRCode
 
 from .. import config, utils
 from ..returnvalues import ReturnValue
-from .contact import update_local_chatrooms
+from ..storage.templates import wrap_user_dict
+from .contact import update_local_chatrooms, update_local_friends
 from .messages import produce_msg
 
 logger = logging.getLogger('itchat')
@@ -26,22 +32,22 @@ def load_login(core):
 
 def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
         loginCallback=None, exitCallback=None):
-    if self.alive:
-        logger.debug('itchat has already logged in.')
+    if self.alive or self.isLogging:
+        logger.warning('itchat has already logged in.')
         return
-    while 1:
-        for getCount in range(10):
+    self.isLogging = True
+    while self.isLogging:
+        uuid = push_login(self)
+        if uuid:
+            qrStorage = io.BytesIO()
+        else:
             logger.info('Getting uuid of QR code.')
-            while not self.get_QRuuid(): time.sleep(1)
+            while not self.get_QRuuid():
+                time.sleep(1)
             logger.info('Downloading QR code.')
             qrStorage = self.get_QR(enableCmdQR=enableCmdQR,
                 picDir=picDir, qrCallback=qrCallback)
-            if qrStorage:
-                break
-            elif 9 == getCount:
-                logger.info('Failed to get QR code, please restart the program.')
-                sys.exit()
-        logger.info('Please scan the QR code to log in.')
+            logger.info('Please scan the QR code to log in.')
         isLoggedIn = False
         while not isLoggedIn:
             status = self.check_login()
@@ -55,8 +61,13 @@ def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
                     isLoggedIn = None
             elif status != '408':
                 break
-        if isLoggedIn: break
-        logger.info('Log in time out, reloading QR code')
+        if isLoggedIn:
+            break
+        elif self.isLogging:
+            logger.info('Log in time out, reloading QR code.')
+    else:
+        return # log in process is stopped by user
+    logger.info('Loading the contact, this may take a little while.')
     self.web_init()
     self.show_mobile_login()
     self.get_contact(True)
@@ -68,6 +79,19 @@ def login(self, enableCmdQR=False, picDir=None, qrCallback=None,
             os.remove(picDir or config.DEFAULT_QR)
         logger.info('Login successfully as %s' % self.storageClass.nickName)
     self.start_receiving(exitCallback)
+    self.isLogging = False
+
+def push_login(core):
+    cookiesDict = core.s.cookies.get_dict()
+    if 'wxuin' in cookiesDict:
+        url = '%s/cgi-bin/mmwebwx-bin/webwxpushloginurl?uin=%s' % (
+            config.BASE_URL, cookiesDict['wxuin'])
+        headers = { 'User-Agent' : config.USER_AGENT }
+        r = core.s.get(url, headers=headers).json()
+        if 'uuid' in r and r.get('ret') in (0, '0'):
+            core.uuid = r['uuid']
+            return r['uuid']
+    return False
 
 def get_QRuuid(self):
     url = '%s/jslogin' % config.BASE_URL
@@ -85,19 +109,16 @@ def get_QRuuid(self):
 def get_QR(self, uuid=None, enableCmdQR=False, picDir=None, qrCallback=None):
     uuid = uuid or self.uuid
     picDir = picDir or config.DEFAULT_QR
-    url = '%s/qrcode/%s' % (config.BASE_URL, uuid)
-    headers = { 'User-Agent' : config.USER_AGENT }
-    try:
-        r = self.s.get(url, stream=True, headers=headers)
-    except:
-        return False
-    qrStorage = io.BytesIO(r.content)
+    qrStorage = io.BytesIO()
+    qrCode = QRCode('https://login.weixin.qq.com/l/' + uuid)
+    qrCode.png(qrStorage, scale=10)
     if hasattr(qrCallback, '__call__'):
         qrCallback(uuid=uuid, status='0', qrcode=qrStorage.getvalue())
     else:
-        with open(picDir, 'wb') as f: f.write(r.content)
+        with open(picDir, 'wb') as f:
+            f.write(qrStorage.getvalue())
         if enableCmdQR:
-            utils.print_cmd_qr(picDir, enableCmdQR=enableCmdQR)
+            utils.print_cmd_qr(qrCode.text(1), enableCmdQR=enableCmdQR)
         else:
             utils.print_qr(picDir)
     return qrStorage
@@ -106,15 +127,17 @@ def check_login(self, uuid=None):
     uuid = uuid or self.uuid
     url = '%s/cgi-bin/mmwebwx-bin/login' % config.BASE_URL
     localTime = int(time.time())
-    params = 'loginicon=true&uuid=%s&tip=0&r=%s&_=%s' % (
-        uuid, localTime / 1579, localTime)
+    params = 'loginicon=true&uuid=%s&tip=1&r=%s&_=%s' % (
+        uuid, int(-localTime / 1579), localTime)
     headers = { 'User-Agent' : config.USER_AGENT }
     r = self.s.get(url, params=params, headers=headers)
     regx = r'window.code=(\d+)'
     data = re.search(regx, r.text)
     if data and data.group(1) == '200':
-        process_login_info(self, r.text)
-        return '200'
+        if process_login_info(self, r.text):
+            return '200'
+        else:
+            return '400'
     elif data:
         return data.group(1)
     else:
@@ -145,6 +168,7 @@ def process_login_info(core, loginContent):
     else:
         core.loginInfo['fileUrl'] = core.loginInfo['syncUrl'] = core.loginInfo['url']
     core.loginInfo['deviceid'] = 'e' + repr(random.random())[2:17]
+    core.loginInfo['logintime'] = int(time.time() * 1e3)
     core.loginInfo['BaseRequest'] = {}
     for node in xml.dom.minidom.parseString(r.text).documentElement.childNodes:
         if node.nodeName == 'skey':
@@ -155,24 +179,49 @@ def process_login_info(core, loginContent):
             core.loginInfo['wxuin'] = core.loginInfo['BaseRequest']['Uin'] = node.childNodes[0].data
         elif node.nodeName == 'pass_ticket':
             core.loginInfo['pass_ticket'] = core.loginInfo['BaseRequest']['DeviceID'] = node.childNodes[0].data
+    if not all([key in core.loginInfo for key in ('skey', 'wxsid', 'wxuin', 'pass_ticket')]):
+        logger.error('Your wechat account may be LIMITED to log in WEB wechat, error info:\n%s' % r.text)
+        core.isLogging = False
+        return False
+    return True
 
 def web_init(self):
-    url = '%s/webwxinit?r=%s' % (self.loginInfo['url'], int(time.time()))
+    url = '%s/webwxinit' % self.loginInfo['url']
+    params = {
+        'r': int(-time.time() / 1579),
+        'pass_ticket': self.loginInfo['pass_ticket'], }
     data = { 'BaseRequest': self.loginInfo['BaseRequest'], }
     headers = {
         'ContentType': 'application/json; charset=UTF-8',
         'User-Agent' : config.USER_AGENT, }
-    r = self.s.post(url, data=json.dumps(data), headers=headers)
+    r = self.s.post(url, params=params, data=json.dumps(data), headers=headers)
     dic = json.loads(r.content.decode('utf-8', 'replace'))
+    # deal with login info
     utils.emoji_formatter(dic['User'], 'NickName')
     self.loginInfo['InviteStartCount'] = int(dic['InviteStartCount'])
-    self.loginInfo['User'] = utils.struct_friend_info(dic['User'])
+    self.loginInfo['User'] = wrap_user_dict(utils.struct_friend_info(dic['User']))
+    self.memberList.append(self.loginInfo['User'])
     self.loginInfo['SyncKey'] = dic['SyncKey']
     self.loginInfo['synckey'] = '|'.join(['%s_%s' % (item['Key'], item['Val'])
         for item in dic['SyncKey']['List']])
     self.storageClass.userName = dic['User']['UserName']
     self.storageClass.nickName = dic['User']['NickName']
-    self.memberList.append(dic['User'])
+    # deal with contact list returned when init
+    contactList = dic.get('ContactList', [])
+    chatroomList, otherList = [], []
+    for m in contactList:
+        if m['Sex'] != 0:
+            otherList.append(m)
+        elif '@@' in m['UserName']:
+            m['MemberList'] = [] # don't let dirty info pollute the list
+            chatroomList.append(m)
+        elif '@' in m['UserName']:
+            # mp will be dealt in update_local_friends as well
+            otherList.append(m)
+    if chatroomList:
+        update_local_chatrooms(self, chatroomList)
+    if otherList:
+        update_local_friends(self, otherList)
     return dic
 
 def show_mobile_login(self):
@@ -200,9 +249,13 @@ def start_receiving(self, exitCallback=None, getReceivingFnOnly=False):
                 if i is None:
                     self.alive = False
                 elif i == '0':
-                    continue
+                    pass
                 else:
                     msgList, contactList = self.get_msg()
+                    if msgList:
+                        msgList = produce_msg(self, msgList)
+                        for msg in msgList:
+                            self.msgList.put(msg)
                     if contactList:
                         chatroomList, otherList = [], []
                         for contact in contactList:
@@ -211,14 +264,15 @@ def start_receiving(self, exitCallback=None, getReceivingFnOnly=False):
                             else:
                                 otherList.append(contact)
                         chatroomMsg = update_local_chatrooms(self, chatroomList)
+                        chatroomMsg['User'] = self.loginInfo['User']
                         self.msgList.put(chatroomMsg)
-                    if msgList:
-                        msgList = produce_msg(self, msgList)
-                        for msg in msgList: self.msgList.put(msg)
+                        update_local_friends(self, otherList)
                 retryCount = 0
+            except requests.exceptions.ReadTimeout:
+                pass
             except:
                 retryCount += 1
-                logger.debug(traceback.format_exc())
+                logger.error(traceback.format_exc())
                 if self.receivingRetryCount < retryCount:
                     self.alive = False
                 else:
@@ -244,9 +298,23 @@ def sync_check(self):
         'uin'      : self.loginInfo['wxuin'],
         'deviceid' : self.loginInfo['deviceid'],
         'synckey'  : self.loginInfo['synckey'],
-        '_'        : int(time.time() * 1000),}
+        '_'        : self.loginInfo['logintime'], }
     headers = { 'User-Agent' : config.USER_AGENT }
-    r = self.s.get(url, params=params, headers=headers)
+    self.loginInfo['logintime'] += 1
+    try:
+        r = self.s.get(url, params=params, headers=headers, timeout=config.TIMEOUT)
+    except requests.exceptions.ConnectionError as e:
+        try:
+            if not isinstance(e.args[0].args[1], BadStatusLine):
+                raise
+            # will return a package with status '0 -'
+            # and value like:
+            # 6f:00:8a:9c:09:74:e4:d8:e0:14:bf:96:3a:56:a0:64:1b:a4:25:5d:12:f4:31:a5:30:f1:c6:48:5f:c3:75:6a:99:93
+            # seems like status of typing, but before I make further achievement code will remain like this
+            return '2'
+        except:
+            raise
+    r.raise_for_status()
     regx = r'window.synccheck={retcode:"(\d+)",selector:"(\d+)"}'
     pm = re.search(regx, r.text)
     if pm is None or pm.group(1) != '0':
@@ -265,10 +333,10 @@ def get_msg(self):
     headers = {
         'ContentType': 'application/json; charset=UTF-8',
         'User-Agent' : config.USER_AGENT }
-    r = self.s.post(url, data=json.dumps(data), headers=headers)
+    r = self.s.post(url, data=json.dumps(data), headers=headers, timeout=config.TIMEOUT)
     dic = json.loads(r.content.decode('utf-8', 'replace'))
     if dic['BaseResponse']['Ret'] != 0: return None, None
-    self.loginInfo['SyncKey'] = dic['SyncCheckKey']
+    self.loginInfo['SyncKey'] = dic['SyncKey']
     self.loginInfo['synckey'] = '|'.join(['%s_%s' % (item['Key'], item['Val'])
         for item in dic['SyncCheckKey']['List']])
     return dic['AddMsgList'], dic['ModContactList']
@@ -283,6 +351,7 @@ def logout(self):
         headers = { 'User-Agent' : config.USER_AGENT }
         self.s.get(url, params=params, headers=headers)
         self.alive = False
+    self.isLogging = False
     self.s.cookies.clear()
     del self.chatroomList[:]
     del self.memberList[:]

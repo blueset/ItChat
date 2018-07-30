@@ -1,8 +1,6 @@
-import logging
-
 import requests
 
-from . import config, storage, utils, log
+from . import storage
 from .components import load_components
 
 class Core(object):
@@ -17,8 +15,8 @@ class Core(object):
                 - it's 5 now, but actually even 1 is enough
                 - failing is failing
         '''
-        self.alive = False
-        self.storageClass = storage.Storage()
+        self.alive, self.isLogging = False, False
+        self.storageClass = storage.Storage(self)
         self.memberList = self.storageClass.memberList
         self.mpList = self.storageClass.mpList
         self.chatroomList = self.storageClass.chatroomList
@@ -54,7 +52,7 @@ class Core(object):
             it is defined in components/login.py
             and of course every single move in login can be called outside
                 - you may scan source code to see how
-                - and modified according to your own demond
+                - and modified according to your own demand
         '''
         raise NotImplementedError()
     def get_QRuuid(self):
@@ -127,7 +125,7 @@ class Core(object):
     def get_msg(self):
         ''' fetch messages
             for fetching
-                - method blocks for sometime util
+                - method blocks for sometime until
                     - new messages are to be received
                     - or anytime they like
                 - synckey is updated with returned synccheckkey
@@ -313,7 +311,7 @@ class Core(object):
         '''
         raise NotImplementedError()
     def upload_file(self, fileDir, isPicture=False, isVideo=False,
-            toUserName='filehelper'):
+            toUserName='filehelper', file_=None, preparedFile=None):
         ''' upload file to server and get mediaId
             for options
                 - fileDir: dir for file ready for upload
@@ -325,7 +323,7 @@ class Core(object):
             it is defined in components/messages.py
         '''
         raise NotImplementedError()
-    def send_file(self, fileDir, toUserName=None, mediaId=None):
+    def send_file(self, fileDir, toUserName=None, mediaId=None, file_=None):
         ''' send attachment
             for options
                 - fileDir: dir for file ready for upload
@@ -335,7 +333,7 @@ class Core(object):
             it is defined in components/messages.py
         '''
         raise NotImplementedError()
-    def send_image(self, fileDir, toUserName=None, mediaId=None):
+    def send_image(self, fileDir=None, toUserName=None, mediaId=None, file_=None):
         ''' send image
             for options
                 - fileDir: dir for file ready for upload
@@ -346,7 +344,7 @@ class Core(object):
             it is defined in components/messages.py
         '''
         raise NotImplementedError()
-    def send_video(self, fileDir=None, toUserName=None, mediaId=None):
+    def send_video(self, fileDir=None, toUserName=None, mediaId=None, file_=None):
         ''' send video
             for options
                 - fileDir: dir for file ready for upload
@@ -366,6 +364,15 @@ class Core(object):
                     - if none of them matches, it will be sent like plain text
                 - toUserName: 'UserName' key of friend dict
                 - mediaId: if set, uploading will not be repeated
+            it is defined in components/messages.py
+        '''
+        raise NotImplementedError()
+    def revoke(self, msgId, toUserName, localId=None):
+        ''' revoke message with its and msgId
+            for options
+                - msgId: message Id on server
+                - toUserName: 'UserName' key of friend dict
+                - localId: message Id at local (optional)
             it is defined in components/messages.py
         '''
         raise NotImplementedError()
