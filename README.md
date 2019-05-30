@@ -14,6 +14,7 @@
 ---
 
 - [Download multiple files in batch will produce duplicated contents, ews#30](https://github.com/blueset/efb-wechat-slave/issues/30)
+- [Raise `ConnectionError` instead of exit when failed to connect at beginning, ews#50](https://github.com/blueset/efb-wechat-slave/issues/50)
 
 
 ## 原文

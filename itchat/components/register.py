@@ -21,7 +21,8 @@ def auto_login(self, hotReload=False, statusStorageDir='itchat.pkl',
         loginCallback=None, exitCallback=None):
     if not test_connect():
         logger.info("You can't get access to internet or wechat domain, so exit.")
-        sys.exit()
+        # sys.exit()
+        raise ConnectionError("Failed to connect to Web WeChat server.")
     self.useHotReload = hotReload
     self.hotReloadDir = statusStorageDir
     if hotReload:
