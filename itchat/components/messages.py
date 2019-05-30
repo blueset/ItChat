@@ -198,7 +198,7 @@ def produce_msg(core, msgList):
                 msg = {
                     'Type': 'Sharing',
                     'Text': m['FileName'], }
-        elif m['MsgType'] == 51: # phone init
+        elif m['MsgType'] == 51 and m['Content']:  # phone init
             msg = update_local_uin(core, m)
         elif m['MsgType'] == 10000:
             msg = {

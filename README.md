@@ -1,4 +1,11 @@
-# itchat
+# itchat [blueset-fork]
+
+## Fork 变更摘要
+
+- [jjkkoo/ea07045](https://github.com/littlecodersh/ItChat/commit/ea0704ffbd814f888fbe48109bd764541807e523)   
+   change empty content msg of type 51(ue init) to useless by default, user probably checking history messages on phone
+
+## 原文
 
 [![Gitter][gitter-picture]][gitter] ![py27][py27] ![py35][py35] [English version][english-version]
 
