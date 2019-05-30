@@ -8,6 +8,8 @@
   修复bug: 状态码为408或者400, 需要重新扫码; 隔一秒再检查登录状态
 - [huodongdong/0c56f1d](https://github.com/littlecodersh/ItChat/commit/0c56f1d314f643c3504e30a404e42945cf7df66f)  
   fix upload_chuck_file fileName quote
+- [wolfsilver/7a1919d](https://github.com/littlecodersh/ItChat/commit/7a1919d59d961d3a6a8ca84e7973dd97356800eb)  
+  Fix 不能获取公众号头像
 
 ## 原文
 
