@@ -148,16 +148,16 @@ def produce_msg(core, msgList):
             elif m['AppMsgType'] == 6:
                 rawMsg = m
                 cookiesList = {name:data for name,data in core.s.cookies.items()}
+                url = core.loginInfo['fileUrl'] + '/webwxgetmedia'
+                params = {
+                    'sender': rawMsg['FromUserName'],
+                    'mediaid': rawMsg['MediaId'],
+                    'filename': rawMsg['FileName'],
+                    'fromuser': core.loginInfo['wxuin'],
+                    'pass_ticket': 'undefined',
+                    'webwx_data_ticket': cookiesList['webwx_data_ticket'],}
+                headers = { 'User-Agent' : config.USER_AGENT }
                 def download_atta(attaDir=None):
-                    url = core.loginInfo['fileUrl'] + '/webwxgetmedia'
-                    params = {
-                        'sender': rawMsg['FromUserName'],
-                        'mediaid': rawMsg['MediaId'],
-                        'filename': rawMsg['FileName'],
-                        'fromuser': core.loginInfo['wxuin'],
-                        'pass_ticket': 'undefined',
-                        'webwx_data_ticket': cookiesList['webwx_data_ticket'],}
-                    headers = { 'User-Agent' : config.USER_AGENT }
                     r = core.s.get(url, params=params, stream=True, headers=headers)
                     tempStorage = io.BytesIO()
                     for block in r.iter_content(1024):
