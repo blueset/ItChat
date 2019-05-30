@@ -3,10 +3,11 @@
 ## Fork 变更摘要
 
 - [jjkkoo/ea07045](https://github.com/littlecodersh/ItChat/commit/ea0704ffbd814f888fbe48109bd764541807e523)   
-   change empty content msg of type 51(ue init) to useless by default, user probably checking history messages on phone
+   change empty content msg of type 51 (ue init) to useless by default, user probably checking history messages on phone
 - [terryso/269448b..849de6a](https://github.com/littlecodersh/ItChat/commit/849de6af022f6dfeef9a0334bea617df09681fea)  
   修复bug: 状态码为408或者400, 需要重新扫码; 隔一秒再检查登录状态
-
+- [huodongdong/0c56f1d](https://github.com/littlecodersh/ItChat/commit/0c56f1d314f643c3504e30a404e42945cf7df66f)  
+  fix upload_chuck_file fileName quote
 
 ## 原文
 
