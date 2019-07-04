@@ -140,7 +140,7 @@ def produce_msg(core, msgList):
                 'Type': 'Video',
                 'FileName' : '%s.mp4' % time.strftime('%y%m%d-%H%M%S', time.localtime()),
                 'Text': download_video, }
-        elif m['MsgType'] == 49: # sharing
+        elif m['MsgType'] == 49: # App msg
             if m['AppMsgType'] == 0: # chat history
                 msg = {
                     'Type': 'Note',
